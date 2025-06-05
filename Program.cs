@@ -1,5 +1,7 @@
 using System;
+using System.Collections.Generic;
 using System.Drawing;
+using System.IO;
 using System.Windows.Forms;
 using Timer = System.Windows.Forms.Timer;
 
@@ -7,73 +9,91 @@ namespace FlappyBird
 {
   public class FlappyBirdGame : Form
   {
-    private readonly Timer gameTimer;
-    private readonly List<Bitmap> birdFrames = new List<Bitmap>();
-    private readonly Bitmap backgroundImage;
-    private readonly Bitmap pipeTopImage;
-    private readonly Bitmap pipeBottomImage;
-    private int currentFrame = 0;
-    private int frameCounter = 0;
-    private const int FrameDelay = 5;
-
-    private int birdY = 250;
-    private int birdVelocity = 0;
     private const int Gravity = 1;
+    private const int JumpForce = -12;
     private const int PipeSpeed = 4;
-    private int score = 0;
     private const int PipeGap = 180;
     private const int PipeWidth = 70;
-    private int pipeX = 400;
-    private int pipeHeightTop;
-    private int pipeHeightBottom;
-    private bool gameOver = false;
-    private readonly Font scoreFont = new Font("Arial", 16, FontStyle.Bold);
-    private readonly Random random = new Random();
-
+    private const int FrameDelay = 5;
     private const int BirdWidth = 50;
     private const int BirdHeight = 40;
-    private const int BirdX = 100;
+    private const int BirdInitialX = 100;
+    private const int BirdInitialY = 250;
+
+    private enum GameState { WaitingToStart, Playing, GameOver }
+    private GameState currentGameState = GameState.WaitingToStart;
+    private int highScore = 0;
+    private int currentScore = 0;
+    private string highScoreFilePath = "highscore.txt";
+
+    private Timer gameTimer;
+    private List<Bitmap> birdAnimationFrames = new List<Bitmap>();
+    private Bitmap backgroundImage;
+    private Bitmap pipeTopImage;
+    private Bitmap pipeBottomImage;
+    private Font uiFont = new Font("Arial", 16, FontStyle.Bold);
+    private Random random = new Random();
+
+    private int birdYPosition = BirdInitialY;
+    private int birdVerticalVelocity = 0;
+    private int pipeXPosition = 0;
+    private int topPipeHeight = 0;
+    private int bottomPipeHeight = 0;
+    private int currentAnimationFrame = 0;
+    private int frameCounter = 0;
 
     public FlappyBirdGame()
     {
-      try
-      {
-        birdFrames.Add(new Bitmap("bird1.png"));
-        birdFrames.Add(new Bitmap("bird2.png"));
-        birdFrames.Add(new Bitmap("bird3.png"));
+      InitializeGameWindow();
+      LoadGameAssets();
+      LoadHighScore();
+      InitializeGameTimer();
+      GeneratePipes();
+    }
 
-        for (int i = 0; i < birdFrames.Count; i++)
-        {
-          birdFrames[i] = new Bitmap(birdFrames[i], new Size(BirdWidth, BirdHeight));
-        }
-
-        backgroundImage = new Bitmap("background.png");
-        backgroundImage = new Bitmap(backgroundImage, new Size(ClientSize.Width, ClientSize.Height));
-
-        pipeTopImage = new Bitmap("pipe_top.png");
-        pipeBottomImage = new Bitmap("pipe_bottom.png");
-
-        pipeTopImage = new Bitmap(pipeTopImage, new Size(PipeWidth, 300));
-        pipeBottomImage = new Bitmap(pipeBottomImage, new Size(PipeWidth, 300));
-      }
-      catch (Exception ex)
-      {
-        MessageBox.Show($"Error loading images: {ex.Message}\nThe game will use default shapes.");
-        birdFrames.Add(CreateColoredBitmap(BirdWidth, BirdHeight, Color.Red));
-        backgroundImage = CreateColoredBitmap(ClientSize.Width, ClientSize.Height, Color.SkyBlue);
-      }
-
+    private void InitializeGameWindow()
+    {
       this.Text = "Flappy Bird";
       this.ClientSize = new Size(400, 500);
       this.DoubleBuffered = true;
-      this.KeyDown += OnKeyDown;
+      this.KeyDown += HandleKeyInput;
       this.BackColor = Color.SkyBlue;
+    }
 
-      gameTimer = new Timer { Interval = 15 };
-      gameTimer.Tick += GameLoop;
-      gameTimer.Start();
+    private void LoadGameAssets()
+    {
+      try
+      {
+        birdAnimationFrames.Add(new Bitmap("bird1.png"));
+        birdAnimationFrames.Add(new Bitmap("bird2.png"));
+        birdAnimationFrames.Add(new Bitmap("bird3.png"));
 
-      GeneratePipes();
+        for (int frameIndex = 0; frameIndex < birdAnimationFrames.Count; frameIndex++)
+        {
+          birdAnimationFrames[frameIndex] = new Bitmap(birdAnimationFrames[frameIndex],
+              new Size(BirdWidth, BirdHeight));
+        }
+
+        backgroundImage = new Bitmap("background.png");
+        backgroundImage = new Bitmap(backgroundImage, this.ClientSize);
+
+        pipeTopImage = new Bitmap("pipe_top.png");
+        pipeBottomImage = new Bitmap("pipe_bottom.png");
+    
+      }
+      catch (Exception ex)
+      {
+        MessageBox.Show($"Ошибка загрузки изображений: {ex.Message}\nИспользуются стандартные графические элементы.");
+        CreatePlaceholderGraphics();
+      }
+    }
+
+    private void CreatePlaceholderGraphics()
+    {
+      birdAnimationFrames.Add(CreateColoredBitmap(BirdWidth, BirdHeight, Color.Red));
+      backgroundImage = CreateColoredBitmap(ClientSize.Width, ClientSize.Height, Color.SkyBlue);
+      pipeTopImage = CreateColoredBitmap(PipeWidth, 300, Color.Green);
+      pipeBottomImage = CreateColoredBitmap(PipeWidth, 300, Color.Green);
     }
 
     private Bitmap CreateColoredBitmap(int width, int height, Color color)
@@ -86,88 +106,146 @@ namespace FlappyBird
       return bmp;
     }
 
-    private void OnKeyDown(object sender, KeyEventArgs e)
+    private void LoadHighScore()
+    {
+      try
+      {
+        if (File.Exists(highScoreFilePath))
+        {
+          highScore = int.Parse(File.ReadAllText(highScoreFilePath));
+        }
+      }
+      catch
+      {
+      }
+    }
+
+    private void SaveHighScore()
+    {
+      try
+      {
+        File.WriteAllText(highScoreFilePath, highScore.ToString());
+      }
+      catch
+      {
+      }
+    }
+
+    private void InitializeGameTimer()
+    {
+      gameTimer = new Timer { Interval = 15 };
+      gameTimer.Tick += UpdateGame;
+      gameTimer.Start();
+    }
+
+    private void HandleKeyInput(object sender, KeyEventArgs e)
     {
       if (e.KeyCode == Keys.Space)
       {
-        if (gameOver)
+        switch (currentGameState)
         {
-          ResetGame();
-        }
-        else
-        {
-          birdVelocity = -12;
+          case GameState.WaitingToStart:
+            StartGame();
+            break;
+          case GameState.Playing:
+            birdVerticalVelocity = JumpForce;
+            break;
+          case GameState.GameOver:
+            ResetGame();
+            break;
         }
       }
     }
 
-    private void GameLoop(object sender, EventArgs e)
+    private void StartGame()
     {
-      if (!gameOver)
+      currentGameState = GameState.Playing;
+    }
+
+    private void UpdateGame(object sender, EventArgs e)
+    {
+      switch (currentGameState)
       {
-        birdVelocity += Gravity;
-        birdY += birdVelocity;
+        case GameState.Playing:
+          UpdateGameState();
+          break;
+      }
+      UpdateAnimation();
+      this.Invalidate();
+    }
 
-        pipeX -= PipeSpeed;
+    private void UpdateGameState()
+    {
+      birdVerticalVelocity += Gravity;
+      birdYPosition += birdVerticalVelocity;
 
-        CheckCollisions();
+      pipeXPosition -= PipeSpeed;
 
-        if (pipeX < -PipeWidth)
+      CheckCollisions();
+
+      if (pipeXPosition < -PipeWidth)
+      {
+        pipeXPosition = this.ClientSize.Width;
+        GeneratePipes();
+        currentScore++;
+        if (currentScore > highScore)
         {
-          pipeX = this.ClientSize.Width;
-          GeneratePipes();
-          score++;
-        }
-
-        frameCounter++;
-        if (frameCounter >= FrameDelay)
-        {
-          frameCounter = 0;
-          currentFrame = (currentFrame + 1) % birdFrames.Count;
+          highScore = currentScore;
+          SaveHighScore();
         }
       }
+    }
 
-      this.Invalidate();
+    private void UpdateAnimation()
+    {
+      frameCounter++;
+      if (frameCounter >= FrameDelay)
+      {
+        frameCounter = 0;
+        currentAnimationFrame = (currentAnimationFrame + 1) % birdAnimationFrames.Count;
+      }
     }
 
     private void GeneratePipes()
     {
-      int minHeight = 50;
-      int maxHeight = this.ClientSize.Height - PipeGap - minHeight;
-      pipeHeightTop = random.Next(minHeight, maxHeight);
-      pipeHeightBottom = this.ClientSize.Height - pipeHeightTop - PipeGap;
+      int minPipeHeight = 50;
+      int maxAvailableHeight = this.ClientSize.Height - PipeGap - minPipeHeight;
+      topPipeHeight = random.Next(minPipeHeight, maxAvailableHeight);
+      bottomPipeHeight = this.ClientSize.Height - topPipeHeight - PipeGap;
     }
 
     private void CheckCollisions()
     {
-      if (birdY < 0 || birdY > this.ClientSize.Height - BirdHeight)
+      if (birdYPosition < 0 || birdYPosition > this.ClientSize.Height - BirdHeight)
       {
-        GameOver();
+        EndGame();
+        return;
       }
 
-      Rectangle birdRect = new Rectangle(BirdX, birdY, BirdWidth, BirdHeight);
-      Rectangle topPipeRect = new Rectangle(pipeX, 0, PipeWidth, pipeHeightTop);
-      Rectangle bottomPipeRect = new Rectangle(pipeX, this.ClientSize.Height - pipeHeightBottom, PipeWidth, pipeHeightBottom);
+      Rectangle birdBounds = new Rectangle(BirdInitialX, birdYPosition, BirdWidth, BirdHeight);
+      Rectangle topPipeBounds = new Rectangle(pipeXPosition, 0, PipeWidth, topPipeHeight);
+      Rectangle bottomPipeBounds = new Rectangle(pipeXPosition,
+          this.ClientSize.Height - bottomPipeHeight, PipeWidth, bottomPipeHeight);
 
-      if (birdRect.IntersectsWith(topPipeRect) || birdRect.IntersectsWith(bottomPipeRect))
+      if (birdBounds.IntersectsWith(topPipeBounds) || birdBounds.IntersectsWith(bottomPipeBounds))
       {
-        GameOver();
+        EndGame();
       }
     }
 
-    private void GameOver()
+    private void EndGame()
     {
-      gameOver = true;
+      currentGameState = GameState.GameOver;
       gameTimer.Stop();
     }
 
     private void ResetGame()
     {
-      birdY = 250;
-      birdVelocity = 0;
-      pipeX = this.ClientSize.Width;
-      score = 0;
-      gameOver = false;
+      birdYPosition = BirdInitialY;
+      birdVerticalVelocity = 0;
+      pipeXPosition = this.ClientSize.Width;
+      currentScore = 0;
+      currentGameState = GameState.Playing;
       GeneratePipes();
       gameTimer.Start();
     }
@@ -175,28 +253,48 @@ namespace FlappyBird
     protected override void OnPaint(PaintEventArgs e)
     {
       base.OnPaint(e);
-      Graphics g = e.Graphics;
+      Graphics graphics = e.Graphics;
 
-      g.DrawImage(backgroundImage, 0, 0, this.ClientSize.Width, this.ClientSize.Height);
+      graphics.DrawImage(backgroundImage, 0, 0, this.ClientSize.Width, this.ClientSize.Height);
 
-      g.DrawImage(pipeTopImage, pipeX, 0, PipeWidth, pipeHeightTop);
-      g.DrawImage(pipeBottomImage, pipeX, this.ClientSize.Height - pipeHeightBottom, PipeWidth, pipeHeightBottom);
+      graphics.DrawImage(pipeTopImage, pipeXPosition, 0, PipeWidth, topPipeHeight);
+      graphics.DrawImage(pipeBottomImage, pipeXPosition,
+          this.ClientSize.Height - bottomPipeHeight, PipeWidth, bottomPipeHeight);
 
-      if (birdFrames.Count > 0)
+      if (birdAnimationFrames.Count > 0)
       {
-        g.DrawImage(birdFrames[currentFrame], BirdX, birdY, BirdWidth, BirdHeight);
+        graphics.DrawImage(birdAnimationFrames[currentAnimationFrame], BirdInitialX, birdYPosition, BirdWidth, BirdHeight);
       }
+      
+      SizeF scoreSize = graphics.MeasureString($"Счет: {currentScore}", uiFont);
+      SizeF highScoreSize = graphics.MeasureString($"Рекорд: {highScore}", uiFont);
 
-      g.DrawString($"Score: {score}", scoreFont, Brushes.White, 20, 20);
+      float rightMargin = 20;
+      float scoreY = 20;
+      float highScoreY = 50;
 
-      if (gameOver)
+      graphics.DrawString($"Счет: {currentScore}", uiFont, Brushes.White,
+          this.ClientSize.Width - scoreSize.Width - rightMargin, scoreY);
+      graphics.DrawString($"Рекорд: {highScore}", uiFont, Brushes.White,
+          this.ClientSize.Width - highScoreSize.Width - rightMargin, highScoreY);
+
+      switch (currentGameState)
       {
-        string gameOverText = "Game Over! Press Space to restart";
-        SizeF textSize = g.MeasureString(gameOverText, scoreFont);
-        g.DrawString(gameOverText, scoreFont, Brushes.Red,
-            (this.ClientSize.Width - textSize.Width) / 2,
-            (this.ClientSize.Height - textSize.Height) / 2);
+        case GameState.WaitingToStart:
+          DrawCenteredMessage(graphics, "Нажмите ПРОБЕЛ чтобы начать", Color.White);
+          break;
+        case GameState.GameOver:
+          DrawCenteredMessage(graphics, "Игра окончена! Нажмите ПРОБЕЛ чтобы начать заново", Color.Red);
+          break;
       }
+    }
+
+    private void DrawCenteredMessage(Graphics graphics, string message, Color color)
+    {
+      SizeF textSize = graphics.MeasureString(message, uiFont);
+      graphics.DrawString(message, uiFont, new SolidBrush(color),
+          (this.ClientSize.Width - textSize.Width) / 2,
+          (this.ClientSize.Height - textSize.Height) / 2);
     }
 
     [STAThread]
@@ -211,11 +309,12 @@ namespace FlappyBird
     {
       if (disposing)
       {
-        foreach (var frame in birdFrames) frame?.Dispose();
+        foreach (var frame in birdAnimationFrames) frame?.Dispose();
         backgroundImage?.Dispose();
         pipeTopImage?.Dispose();
         pipeBottomImage?.Dispose();
         gameTimer?.Dispose();
+        uiFont?.Dispose();
       }
       base.Dispose(disposing);
     }
