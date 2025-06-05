@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Drawing;
 using System.Windows.Forms;
 
@@ -9,7 +9,7 @@ namespace FlappyBird
     private GameStateManager stateManager;
     private GameRenderer renderer;
     private GameController controller;
-    private Timer gameUpdateTimer;
+    private System.Windows.Forms.Timer gameUpdateTimer;
 
     public FlappyBirdGame()
     {
@@ -36,7 +36,7 @@ namespace FlappyBird
 
     private void InitializeGameTimer()
     {
-      gameUpdateTimer = new Timer { Interval = 15 };
+      gameUpdateTimer = new System.Windows.Forms.Timer { Interval = 15 };
       gameUpdateTimer.Tick += (sender, e) =>
       {
         stateManager.Update();
