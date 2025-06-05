@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Drawing;
 using System.IO;
 
@@ -10,13 +10,14 @@ namespace FlappyBird
     public GameState CurrentState { get; private set; } = GameState.WaitingToStart;
 
     private const int GravityValue = 1;
-    private const int JumpForceValue = -12;
+    private const int JumpForceValue = -10;
+    private const float GravityMultiplier = 0.7f;
     private const int PipeMovementSpeed = 4;
     private const int VerticalGapBetweenPipes = 180;
     private const int PipeWidthPixels = 70;
     private const int AnimationFrameDelay = 5;
-    private const int BirdWidthPixels = 60;
-    private const int BirdHeightPixels = 40;
+    private const int BirdWidthPixels = 40;
+    private const int BirdHeightPixels = 50;
     private const int BirdStartXPosition = 100;
     private const int BirdStartYPosition = 250;
     private const int InitialPipeSpawnOffset = 150;
@@ -28,7 +29,7 @@ namespace FlappyBird
     public int HighScore { get; private set; }
     public int CurrentScore { get; private set; }
     public int BirdYPosition { get; private set; } = BirdStartYPosition;
-    public int BirdVerticalSpeed { get; private set; }
+    public float BirdVerticalSpeed { get; private set; }
     public int PipeXPosition { get; private set; }
     public int UpperPipeHeight { get; private set; }
     public int LowerPipeHeight { get; private set; }
@@ -54,8 +55,8 @@ namespace FlappyBird
 
     private void UpdateGameLogic()
     {
-      BirdVerticalSpeed += GravityValue;
-      BirdYPosition += BirdVerticalSpeed;
+      BirdVerticalSpeed += GravityValue * GravityMultiplier;
+      BirdYPosition += (int)BirdVerticalSpeed;
       PipeXPosition -= PipeMovementSpeed;
 
       CheckCollisions();
