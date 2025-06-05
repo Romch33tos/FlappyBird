@@ -8,9 +8,13 @@ namespace FlappyBird
   public class FlappyBirdGame : Form
   {
     private readonly Timer gameTimer;
-    private readonly Bitmap birdImage;
+    private readonly List<Bitmap> birdFrames = new List<Bitmap>();
+    private readonly Bitmap backgroundImage;
     private readonly Bitmap pipeTopImage;
     private readonly Bitmap pipeBottomImage;
+    private int currentFrame = 0;
+    private int frameCounter = 0;
+    private const int FrameDelay = 5;
 
     private int birdY = 250;
     private int birdVelocity = 0;
@@ -24,28 +28,39 @@ namespace FlappyBird
     private int pipeHeightBottom;
     private bool gameOver = false;
     private readonly Font scoreFont = new Font("Arial", 16, FontStyle.Bold);
-    private readonly Brush skyBrush = new SolidBrush(Color.SkyBlue);
+    private readonly Random random = new Random();
 
-    private const int BirdWidth = 60;
-    private const int BirdHeight = 60;
+    private const int BirdWidth = 50;
+    private const int BirdHeight = 40;
     private const int BirdX = 100;
 
     public FlappyBirdGame()
     {
       try
       {
-        birdImage = new Bitmap("bird.png");
+        birdFrames.Add(new Bitmap("bird1.png"));
+        birdFrames.Add(new Bitmap("bird2.png"));
+        birdFrames.Add(new Bitmap("bird3.png"));
+
+        for (int i = 0; i < birdFrames.Count; i++)
+        {
+          birdFrames[i] = new Bitmap(birdFrames[i], new Size(BirdWidth, BirdHeight));
+        }
+
+        backgroundImage = new Bitmap("background.png");
+        backgroundImage = new Bitmap(backgroundImage, new Size(ClientSize.Width, ClientSize.Height));
+
         pipeTopImage = new Bitmap("pipe_top.png");
         pipeBottomImage = new Bitmap("pipe_bottom.png");
 
-        birdImage = new Bitmap(birdImage, new Size(BirdWidth, BirdHeight));
+        pipeTopImage = new Bitmap(pipeTopImage, new Size(PipeWidth, 300));
+        pipeBottomImage = new Bitmap(pipeBottomImage, new Size(PipeWidth, 300));
       }
       catch (Exception ex)
       {
-        MessageBox.Show($"Ошибка загрузки изображений: {ex.Message}\nИгра будет использовать стандартные фигуры.");
-        birdImage = CreateColoredBitmap(BirdWidth, BirdHeight, Color.Red);
-        pipeTopImage = CreateColoredBitmap(PipeWidth, 300, Color.Green);
-        pipeBottomImage = CreateColoredBitmap(PipeWidth, 300, Color.Green);
+        MessageBox.Show($"Error loading images: {ex.Message}\nThe game will use default shapes.");
+        birdFrames.Add(CreateColoredBitmap(BirdWidth, BirdHeight, Color.Red));
+        backgroundImage = CreateColoredBitmap(ClientSize.Width, ClientSize.Height, Color.SkyBlue);
       }
 
       this.Text = "Flappy Bird";
@@ -54,8 +69,7 @@ namespace FlappyBird
       this.KeyDown += OnKeyDown;
       this.BackColor = Color.SkyBlue;
 
-      gameTimer = new Timer();
-      gameTimer.Interval = 15;
+      gameTimer = new Timer { Interval = 15 };
       gameTimer.Tick += GameLoop;
       gameTimer.Start();
 
@@ -104,6 +118,13 @@ namespace FlappyBird
           GeneratePipes();
           score++;
         }
+
+        frameCounter++;
+        if (frameCounter >= FrameDelay)
+        {
+          frameCounter = 0;
+          currentFrame = (currentFrame + 1) % birdFrames.Count;
+        }
       }
 
       this.Invalidate();
@@ -111,7 +132,6 @@ namespace FlappyBird
 
     private void GeneratePipes()
     {
-      Random random = new Random();
       int minHeight = 50;
       int maxHeight = this.ClientSize.Height - PipeGap - minHeight;
       pipeHeightTop = random.Next(minHeight, maxHeight);
@@ -157,14 +177,17 @@ namespace FlappyBird
       base.OnPaint(e);
       Graphics g = e.Graphics;
 
-      g.FillRectangle(skyBrush, 0, 0, this.ClientSize.Width, this.ClientSize.Height);
+      g.DrawImage(backgroundImage, 0, 0, this.ClientSize.Width, this.ClientSize.Height);
 
       g.DrawImage(pipeTopImage, pipeX, 0, PipeWidth, pipeHeightTop);
       g.DrawImage(pipeBottomImage, pipeX, this.ClientSize.Height - pipeHeightBottom, PipeWidth, pipeHeightBottom);
 
-      g.DrawImage(birdImage, BirdX, birdY, BirdWidth, BirdHeight);
+      if (birdFrames.Count > 0)
+      {
+        g.DrawImage(birdFrames[currentFrame], BirdX, birdY, BirdWidth, BirdHeight);
+      }
 
-      g.DrawString($"Score: {score}", scoreFont, Brushes.Black, 20, 20);
+      g.DrawString($"Score: {score}", scoreFont, Brushes.White, 20, 20);
 
       if (gameOver)
       {
@@ -182,6 +205,19 @@ namespace FlappyBird
       Application.EnableVisualStyles();
       Application.SetCompatibleTextRenderingDefault(false);
       Application.Run(new FlappyBirdGame());
+    }
+
+    protected override void Dispose(bool disposing)
+    {
+      if (disposing)
+      {
+        foreach (var frame in birdFrames) frame?.Dispose();
+        backgroundImage?.Dispose();
+        pipeTopImage?.Dispose();
+        pipeBottomImage?.Dispose();
+        gameTimer?.Dispose();
+      }
+      base.Dispose(disposing);
     }
   }
 }
